@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?ifndef Version?>
+  <?define Version = "0.0.1"?>
+  <?endif?>
+  <?ifndef StageDir?>
+  <?define StageDir = "stage"?>
+  <?endif?>
+
+  <Package Name="MouseMover"
+           Manufacturer="MouseMover"
+           Version="$(Version)"
+           UpgradeCode="8C942AD8-E76A-4E51-A9A0-D4D88F8A0E96"
+           Scope="perUser"
+           Compressed="yes"
+           InstallerVersion="500">
+    <SummaryInformation Description="MouseMover Setup" Manufacturer="MouseMover" />
+    <MajorUpgrade DowngradeErrorMessage="Eine neuere Version von MouseMover ist bereits installiert." />
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="MouseMover" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenuFolder" Name="MouseMover" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable">
+        <File Id="MmExe" Source="$(StageDir)\mm.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="ReadmeFile">
+        <File Id="ReadmeMd" Source="$(StageDir)\README.md" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Component Id="StartMenuShortcuts" Directory="AppMenuFolder" Guid="C4F8694B-FD60-4A98-9C71-422754723B3F">
+      <Shortcut Id="LaunchShortcut"
+                Name="MouseMover"
+                Description="MouseMover starten"
+                Target="[INSTALLFOLDER]mm.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="UninstallShortcut"
+                Name="MouseMover deinstallieren"
+                Description="MouseMover entfernen"
+                Target="[System64Folder]msiexec.exe"
+                Arguments="/x [ProductCode]" />
+      <RemoveFolder Id="RemoveAppMenuFolder" Directory="AppMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\MouseMover" Name="StartMenuShortcuts" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="MainFeature" Title="MouseMover" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcuts" />
+    </Feature>
+  </Package>
+</Wix>

@@ -1,0 +1,116 @@
+name: Build Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version fuer einen Testbuild (z. B. v1.0.0; nur Workflow-Artefakte)"
+        required: false
+        default: "v0.0.1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mousemover-release-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Setup .NET for WiX
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          if ($env:TAG -cnotmatch '^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-[0-9A-Za-z.-]+)?$') {
+            throw "Tag '$env:TAG' muss wie v1.2.3 oder 1.2.3 aussehen."
+          }
+          $major = [int]$Matches[1]
+          $minor = [int]$Matches[2]
+          $patch = [int]$Matches[3]
+          if ($major -gt 255 -or $minor -gt 255 -or $patch -gt 65535) {
+            throw 'MSI-Version ausserhalb des Windows-Installer-Wertebereichs.'
+          }
+          "MSI_VERSION=$major.$minor.$patch" >> $env:GITHUB_ENV
+          "MSI_NAME=MouseMover_$($env:TAG).msi" >> $env:GITHUB_ENV
+
+      - name: Test and build mm.exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { throw 'go test fehlgeschlagen' }
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw 'go vet fehlgeschlagen' }
+          go build -trimpath -ldflags '-s -w -H windowsgui' -o mm.exe ./cmd/mm
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path mm.exe)) { throw 'Go-Build fehlgeschlagen' }
+          $hash = (Get-FileHash mm.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  mm.exe" | Set-Content -Path mm.exe.sha256 -Encoding ascii
+
+      - name: Install WiX Toolset
+        shell: pwsh
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Build per-user MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path installer/stage | Out-Null
+          Copy-Item mm.exe, README.md installer/stage -Force
+          wix build installer/Package.wxs `
+            -arch x64 `
+            -define "Version=$env:MSI_VERSION" `
+            -define "StageDir=stage" `
+            -bindpath installer `
+            -out $env:MSI_NAME
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $env:MSI_NAME)) { throw 'MSI-Build fehlgeschlagen' }
+          $hash = (Get-FileHash $env:MSI_NAME -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:MSI_NAME" | Set-Content -Path "$env:MSI_NAME.sha256" -Encoding ascii
+
+      - name: Upload test-build artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mousemover-${{ env.TAG }}
+          path: |
+            mm.exe
+            mm.exe.sha256
+            ${{ env.MSI_NAME }}
+            ${{ env.MSI_NAME }}.sha256
+          if-no-files-found: error
+
+      - name: Attach files to GitHub Release
+        if: github.event_name != 'workflow_dispatch'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.TAG }}
+          fail_on_unmatched_files: true
+          files: |
+            mm.exe
+            mm.exe.sha256
+            ${{ env.MSI_NAME }}
+            ${{ env.MSI_NAME }}.sha256

@@ -1,0 +1,6 @@
+.gocache/
+.smoke/
+*.test
+installer/stage/
+*.msi
+*.sha256
