@@ -55,6 +55,8 @@ jobs:
           }
           "MSI_VERSION=$major.$minor.$patch" >> $env:GITHUB_ENV
           "MSI_NAME=MouseMover_$($env:TAG).msi" >> $env:GITHUB_ENV
+          $notes = "release-notes/$env:TAG.md"
+          if (Test-Path $notes) { "NOTES_PATH=$notes" >> $env:GITHUB_ENV }
 
       - name: Test and build mm.exe
         shell: pwsh
@@ -108,6 +110,9 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.TAG }}
+          name: MouseMover ${{ env.TAG }}
+          body_path: ${{ env.NOTES_PATH }}
+          generate_release_notes: ${{ env.NOTES_PATH == '' }}
           fail_on_unmatched_files: true
           files: |
             mm.exe
